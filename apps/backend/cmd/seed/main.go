@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/brianvoe/gofakeit/v6"
+	"github.com/google/uuid"
 	"github.com/okavatti/blueberry/backend/server"
 	"gorm.io/gorm"
 )
