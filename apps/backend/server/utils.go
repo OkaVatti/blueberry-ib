@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -9,6 +10,8 @@ import (
 	"io"
 
 	"github.com/alexedwards/argon2id"
+	"github.com/microcosm-cc/bluemonday"
+	"github.com/yuin/goldmark"
 )
 
 // Argon2 helpers using alexedwards/argon2id
@@ -75,4 +78,16 @@ func AESGCMDecryptB64(keyBase64 string, b64cipher string) ([]byte, error) {
 		return nil, err
 	}
 	return pt, nil
+}
+
+// RenderMarkdown converts markdown to sanitized HTML (goldmark + bluemonday)
+func RenderMarkdown(md string) (string, error) {
+	var buf bytes.Buffer
+	if err := goldmark.Convert([]byte(md), &buf); err != nil {
+		return "", err
+	}
+	// sanitize produced HTML
+	policy := bluemonday.UGCPolicy()
+	sanitized := policy.SanitizeBytes(buf.Bytes())
+	return string(sanitized), nil
 }

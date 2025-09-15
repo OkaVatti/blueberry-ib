@@ -32,4 +32,13 @@ require (
 	golang.org/x/text v0.29.0 // indirect
 )
 
-require golang.org/x/time v0.11.0 // indirect
+require (
+	github.com/microcosm-cc/bluemonday v1.0.27
+	golang.org/x/time v0.11.0 // indirect
+)
+
+require (
+	github.com/aymerick/douceur v0.2.0 // indirect
+	github.com/gorilla/css v1.0.1 // indirect
+	github.com/yuin/goldmark v1.7.13
+)
