@@ -12,7 +12,10 @@ require (
 
 require (
 	github.com/alexedwards/argon2id v1.0.0 // direct
+	github.com/aymerick/douceur v0.2.0 // indirect
+	github.com/brianvoe/gofakeit/v6 v6.28.0
 	github.com/golang-jwt/jwt/v5 v5.3.0 // direct
+	github.com/gorilla/css v1.0.1 // indirect
 	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -24,33 +27,13 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
+	github.com/yuin/goldmark v1.7.13
 	golang.org/x/net v0.44.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/sys v0.36.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
-)
-
-require (
-	github.com/aymerick/douceur v0.2.0 // indirect
-	github.com/gorilla/css v1.0.1 // indirect
-<<<<<<< HEAD
-	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
-	github.com/yuin/goldmark v1.7.13 // indirect
-	golang.org/x/time v0.13.0 // indirect
-	golang.org/x/time v0.13.0 // indirect
-)
-
-require (
-	github.com/aymerick/douceur v0.2.0 // indirect
-	github.com/brianvoe/gofakeit/v6 v6.28.0
-	github.com/gorilla/css v1.0.1 // indirect
-	github.com/yuin/goldmark v1.7.13
-)
-=======
-	github.com/microcosm-cc/bluemonday v1.0.27
-	github.com/yuin/goldmark v1.7.13
 	golang.org/x/time v0.11.0 // indirect
 )
->>>>>>> 984f04b (clean up :3)
