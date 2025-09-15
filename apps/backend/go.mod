@@ -33,9 +33,20 @@ require (
 )
 
 require (
+<<<<<<< HEAD
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/microcosm-cc/bluemonday v1.0.27 // indirect
 	github.com/yuin/goldmark v1.7.13 // indirect
 	golang.org/x/time v0.11.0 // indirect
+=======
+	github.com/microcosm-cc/bluemonday v1.0.27
+	golang.org/x/time v0.11.0 // indirect
+)
+
+require (
+	github.com/aymerick/douceur v0.2.0 // indirect
+	github.com/gorilla/css v1.0.1 // indirect
+	github.com/yuin/goldmark v1.7.13
+>>>>>>> 74903c2ae6d039c01db8c7f63f18a260e4e5a5a2
 )
