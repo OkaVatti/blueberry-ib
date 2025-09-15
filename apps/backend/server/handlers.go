@@ -92,6 +92,13 @@ func Run(cfg Config) error {
 		return nil
 	})
 
+	api.DELETE("/posts/:id", s.RequireRoles("owner", "coowner", "admin", "moderator")(s.AdminDeletePost))
+	api.GET("/admin/users", s.RequireRoles("owner", "coowner", "admin")(s.AdminListUsers))
+	api.POST("/admin/users/:id/ban", s.RequireRoles("owner", "coowner", "admin", "moderator")(s.AdminBanUser))
+	api.DELETE("/admin/posts/:id", s.RequireRoles("owner", "coowner", "admin", "moderator")(s.AdminDeletePost))
+	api.DELETE("/admin/comments/:id", s.RequireRoles("owner", "coowner", "admin", "moderator")(s.AdminDeleteComment))
+	api.GET("/admin/logs", s.RequireRoles("owner", "coowner", "admin")(s.AdminListLogs))
+
 	return e.Start(":" + cfg.Port)
 }
 

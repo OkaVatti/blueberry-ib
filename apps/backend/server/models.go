@@ -16,6 +16,8 @@ type User struct {
 	Ink          int64
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+	IsBanned     bool      `gorm:"default:false"`
+	BannedUntil  time.Time `gorm:""`
 }
 
 func (u *User) BeforeCreate(tx *gorm.DB) (err error) {

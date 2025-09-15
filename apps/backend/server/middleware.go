@@ -22,7 +22,6 @@ func (s *Server) AuthMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-// Helper to extract bearer token cleanly
 func ExtractTokenFromHeader(h string) string {
 	h = strings.TrimSpace(h)
 	if strings.HasPrefix(h, "Bearer ") {
