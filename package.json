@@ -1,0 +1,28 @@
+{
+  "name": "blueberry",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "pnpm run start:all",
+    "start:all": "sh -c \"pnpm run start:db && concurrently -k \\\"pnpm run frontend:dev\\\" \\\"pnpm run backend:dev\\\"\"",
+    "start:db": "docker compose -f apps/backend/docker-compose.yml up -d",
+    "stop:db": "docker compose -f apps/backend/docker-compose.yml down",
+    "start:frontend": "pnpm --filter ./apps/frontend --workspace dev || pnpm run frontend:dev",
+    "start:backend": "pnpm run backend:dev",
+    "frontend:dev": "pnpm --filter frontend dev",
+    "backend:dev": "cd apps/backend && go run main.go",
+    "db:migrate": "cd apps/backend && go run ./migrations/migrate.go --dsn \"$DATABASE_URL\" --dir ./migrations",
+    "setup": "pnpm install && pnpm run start:db && pnpm run db:migrate",
+    "stop:all": "sh -c \"pnpm run stop:db || true; pkill -f 'vite' || true; pkill -f 'go run main.go' || true\"",
+    "clean": "pnpm run --recursive clean"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.4.0",
+    "concurrently": "^9.2.1",
+    "typescript": "5.9.2"
+  }
+}
