@@ -6,9 +6,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"gorm.io/gorm"
 )
 
+// Server holds dependencies for handlers.
 type Server struct {
 	DB     *gorm.DB
 	Config Config
@@ -32,6 +34,24 @@ func Run(cfg Config) error {
 	go s.WSHub.Run()
 
 	e := echo.New()
+
+	// helpful middleware: logger + recover so panics produce JSON 500s and don't abruptly close sockets
+	e.Use(middleware.Logger())
+	e.Use(middleware.Recover())
+
+	// CORS - allow your frontend dev hosts (add any other hosts you use)
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins: []string{
+			"http://localhost:9876", // Vite port you used
+			"http://127.0.0.1:9876",
+			"http://localhost:5173",
+			"http://127.0.0.1:5173",
+		},
+		AllowMethods: []string{echo.GET, echo.HEAD, echo.PUT, echo.PATCH, echo.POST, echo.DELETE},
+		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization"},
+	}))
+
+	// Attach server instance to context so handlers can access it easily
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			c.Set("server", s)
@@ -41,6 +61,12 @@ func Run(cfg Config) error {
 
 	// routes
 	api := e.Group("/api/v1")
+
+	// simple health endpoint for quick checks
+	api.GET("/health", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, echo.Map{"status": "ok"})
+	})
+
 	api.POST("/auth/register", s.Register)
 	api.POST("/auth/login", s.Login)
 
@@ -55,14 +81,17 @@ func Run(cfg Config) error {
 
 	api.POST("/posts/:id/vote", s.AuthMiddleware(s.VotePost))
 
+	// websocket endpoint (not under /api/v1 to keep consistent with earlier config)
 	e.GET("/ws", func(c echo.Context) error {
 		s.WSHub.ServeWS(c.Response(), c.Request())
 		return nil
 	})
 
+	// start server
 	return e.Start(":" + cfg.Port)
 }
 
+// seedDefaultBoards creates basic boards if they don't exist
 func seedDefaultBoards(db *gorm.DB) {
 	defaults := []Board{
 		{Name: "Random", Slug: "b", Description: "Random board", IsDefault: true},
