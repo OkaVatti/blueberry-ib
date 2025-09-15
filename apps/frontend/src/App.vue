@@ -1,32 +1,15 @@
 <template>
-  <div style="font-family: Inter, system-ui, -apple-system; padding: 24px">
-    <h1>Blueberry — Prototype</h1>
-
-    <div style="display: flex; gap: 20px">
-      <div style="width: 320px">
-        <Login @login="onLogin" />
-      </div>
-
-      <div style="flex: 1">
-        <BoardsList :token="token" />
-      </div>
-    </div>
+  <div
+    class="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+  >
+    <Navbar />
+    <main class="max-w-5xl mx-auto p-4">
+      <router-view />
+    </main>
   </div>
 </template>
 
 <script lang="ts">
-import { defineComponent, ref } from "vue";
-import Login from "./components/Login.vue";
-import BoardsList from "./components/BoardsList.vue";
-
-export default defineComponent({
-  components: { Login, BoardsList },
-  setup() {
-    const token = ref<string | null>(null);
-    function onLogin(t: string) {
-      token.value = t;
-    }
-    return { token, onLogin };
-  },
-});
+import Navbar from "./components/Navbar.vue";
+export default { components: { Navbar } };
 </script>
