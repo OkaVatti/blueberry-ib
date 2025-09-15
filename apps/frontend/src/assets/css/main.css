@@ -1,10 +1,105 @@
 @import "tailwindcss";
 
+/* apps/frontend/src/style.css
+   Theme variables (dark default) + light scheme.
+   Uses CSS variables so Tailwind classes referencing colors pick them up.
+*/
+
 :root {
+  /* Light mode (will be applied when .light is on body) */
+  --color-primary: #7673ba;
+  --color-secondary: #201c5a;
+  --color-accent: #43407d;
+  --color-bg: #e2e2e4;
+  --color-text: #222037;
+
   --radius: 8px;
+  --muted: rgba(34,32,55,0.6);
+  --glass: rgba(255,255,255,0.04);
+}
+
+body.dark {
+  /* Dark mode (default) */
+  --color-primary: #49458c;
+  --color-secondary: #a9a5e3;
+  --color-accent: #8582bf;
+  --color-bg: #1a1a1d;
+  --color-text: #cac8df;
+
+  --muted: rgba(202,200,223,0.6);
+  --glass: rgba(255,255,255,0.02);
+}
+
+/* base */
+html, body, #app {
+  height: 100%;
 }
 body {
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI",
-    Roboto, "Helvetica Neue", Arial;
-  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  transition: background-color .22s ease, color .22s ease;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
+
+/* small utilities */
+.bg-ui { background: var(--color-bg); }
+.text-ui { color: var(--color-text); }
+.border-ui { border-color: rgba(255,255,255,0.06); }
+
+/* glass card */
+.card {
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: var(--tw-shadow, 0 6px 18px rgba(0,0,0,0.45));
+  border: 1px solid rgba(255,255,255,0.03);
+}
+
+/* retro imageboard feel — monospace meta and small board slug */
+.board-meta {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", monospace;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* action buttons */
+.btn-primary {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-primary) 90%, black 10%), var(--color-primary));
+  color: var(--color-text);
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+/* small avatar */
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.04));
+  display: inline-block;
+  overflow: hidden;
+  object-fit: cover;
+}
+
+/* utility for markdown content area */
+.markdown-body {
+  line-height: 1.5;
+  color: var(--color-text);
+}
+.markdown-body a { color: var(--color-secondary); text-decoration: underline; }
+
+/* layout helpers */
+.container-grid {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 240px 1fr 320px;
+  gap: 18px;
+  padding: 20px;
+}
+@media (max-width: 1100px) {
+  .container-grid { grid-template-columns: 1fr; padding: 14px; }
 }

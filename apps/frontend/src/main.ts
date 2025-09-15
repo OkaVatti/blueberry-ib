@@ -4,6 +4,12 @@ import router from "./router";
 import App from "./App.vue";
 import { setAuthToken } from "./services/api";
 import { useUserStore } from "./stores/user";
+// in main.ts after creating app and pinia:
+import { useThemeStore } from "./stores/theme";
+import "./style.css";
+import "./assets/css/main.css"; // if you use main.css; optional
+
+
 import "./style.css";
 
 const app = createApp(App);
@@ -26,5 +32,10 @@ if (token) {
     } catch {}
   }
 }
+
+// in main.ts after creating app and pinia:
+const theme = useThemeStore();
+theme.applyMode(theme.mode);
+
 
 app.mount("#app");
