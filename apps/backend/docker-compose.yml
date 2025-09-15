@@ -1,13 +1,31 @@
-version: '3.8'
+version: "3.8"
+
 services:
   db:
     image: postgres:15-alpine
+    container_name: blueberry-postgres
+    env_file:
+      - .env         # optional: will load DATABASE_URL if you keep it here; not required for DB service vars below
     environment:
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: blueberry
+      # Optionally set locale/timezone:
+      # TZ: "UTC"
     ports:
-      - "9876:9876"
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro  # optional: place .sql/.sh init scripts here (only run on first init)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d blueberry"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
 volumes:
   pgdata:
+    name: blueberry_pgdata
+
