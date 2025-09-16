@@ -99,7 +99,25 @@ func Run(cfg Config) error {
 	api.DELETE("/admin/comments/:id", s.RequireRoles("owner", "coowner", "admin", "moderator")(s.AdminDeleteComment))
 	api.GET("/admin/logs", s.RequireRoles("owner", "coowner", "admin")(s.AdminListLogs))
 
+	api.POST("/render", s.RenderMarkdownEndpoint)
+
 	return e.Start(":" + cfg.Port)
+}
+
+// RenderMarkdownEndpoint accepts { "markdown": "..." } and returns { "html": "..." }
+func (s *Server) RenderMarkdownEndpoint(c echo.Context) error {
+	type req struct {
+		Markdown string `json:"markdown"`
+	}
+	var r req
+	if err := c.Bind(&r); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid"})
+	}
+	html, err := RenderMarkdown(r.Markdown)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "render failed"})
+	}
+	return c.JSON(http.StatusOK, echo.Map{"html": html})
 }
 
 // seedDefaultBoards creates basic boards if they don't exist
