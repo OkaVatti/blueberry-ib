@@ -1,9 +1,14 @@
+<!-- apps/frontend/src/pages/HomeIndex.vue -->
 <template>
-  <!-- reuse MainLayout component as the home feed -->
   <MainLayout />
 </template>
 
 <script lang="ts">
+import { defineComponent } from "vue";
 import MainLayout from "../components/MainLayout.vue";
-export default { components: { MainLayout } };
+
+export default defineComponent({
+  name: "HomeIndex",
+  components: { MainLayout }
+});
 </script>

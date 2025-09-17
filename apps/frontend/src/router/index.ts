@@ -1,3 +1,4 @@
+// apps/frontend/src/router/index.ts
 import { createRouter, createWebHistory, type RouteRecordRaw } from "vue-router";
 
 // layouts
@@ -15,6 +16,10 @@ import BoardPage from "../pages/BoardPage.vue";
 import SearchPage from "../pages/SearchPage.vue";
 import PostPage from "../pages/PostPage.vue";
 import ThreadPage from "../pages/ThreadPage.vue";
+import BoardsList from "../components/BoardsList.vue";
+
+// auth
+import Login from "../components/Login.vue";
 
 // dashboards (these are children inside DashboardLayout)
 import OwnerDash from "../components/ownerDash.vue";
@@ -28,13 +33,29 @@ const routes: Array<RouteRecordRaw> = [
     component: DefaultLayout,
     children: [
       { path: "", name: "home", component: HomeIndex },
+      { path: "boards", name: "boards-list", component: BoardsList },
       {
         path: "profile/:id",
         name: "profile",
         component: ProfilePage,
         props: true,
       },
-      { path: "search", name: "search", component: SearchPage },
+    ],
+  },
+
+  // Auth routes (standalone, no layout)
+  {
+    path: "/auth",
+    name: "auth",
+    component: Login,
+  },
+
+  // Search with its own layout
+  {
+    path: "/search",
+    component: SearchLayout,
+    children: [
+      { path: "", name: "search", component: SearchPage },
     ],
   },
 
