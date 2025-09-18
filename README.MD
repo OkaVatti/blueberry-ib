@@ -306,3 +306,25 @@ ____
 > Owner and Co-Owner have the ability to do the same as all other roles, but, are
 > also able temp-site-ban and perma-site-ban users.
 
+##### Site Rules
+
+> Imageboard / Microblogging Website rules are as follows
+> 
+> 1. Engage in tomfoolery
+> 2. Be whimsical with your presence, always
+> 3. don't be a mark-ass trick-ass BITCH
+> 4. don't be mean unless it's for a definitely valid reason
+> 5. don't be a stranger sweet child :3
+> 6. no slurs unless you're allowed to say them, never towards anyone for derogatory purposes or reasons
+> 7. no content pertaining to the exploitaion of minors according to any of the definitions givene by the 
+>     countries in where the existence and distribution of the exploitative material is prohibated.
+> 8. anonymity comes with a price, please use it wisely, do not violate any of the rules listed. 
+>     you will be kicked, termorarily or perminently banned from boards or the site, and your name forever
+>     listed on the `banned board`, with your user name, reason for ban, the post, or comment that got you 
+>     banned, and your last 5 likes, comments, and posts you had mad made at the time, all for users to 
+>     comment upo
+> 9. Free speech is something we blieve in, but it is not absolute; the things we say have consequenses.
+>     It is for that reason alone that we ask our users to engage in their freedom responsibly, and to
+>     be sure that we use our words responsibly, as they effect those around us more than we would like
+>     to think
+ 
