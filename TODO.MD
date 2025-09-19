@@ -11,7 +11,7 @@
 - implement boards, their pages, layouts, and components
 - implement respective owner/co-owner/admin/moderator dashboards and their utility components for website moderation purposes
 - implement search page and its respective components
-- implement custom user defined roles/tags (example: wizard, goblin, mage, commoner, goon, evil, etc.)  
+- implement custom user defined roles/tags (example: wizard, goblin, mage, commoner, goon, evil, etc.)   
 
 ## Backend
 

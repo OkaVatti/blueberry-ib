@@ -1,0 +1,33 @@
+/* Blueberry neobrutalist theme tokens */
+:root {
+  --bg: #fbfbf9;
+  --panel: #fff;
+  --muted: #e9e6df;
+  --ink: #0b1220;
+  --ink-muted: #475569;
+  --accent: #1e90ff; /* blue: primary accent for links / boards */
+  --accent-2: #ff5a5f; /* coral: actions / alerts */
+  --success: #22c55e;
+  --danger: #ef4444;
+  --karma: #f59e0b;
+  --glass-shadow: rgba(17, 24, 39, 0.06);
+  --border-heavy: 4px;
+  --border-light: 2px;
+  --radius: 8px;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono",
+    "Segoe UI Mono", "Courier New", monospace;
+  --ui: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial;
+}
+
+/* dark tweak */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #071018;
+    --panel: #0b1220;
+    --muted: #081018;
+    --ink: #e6eef8;
+    --ink-muted: #9fb3c8;
+    --glass-shadow: rgba(0, 0, 0, 0.6);
+  }
+}

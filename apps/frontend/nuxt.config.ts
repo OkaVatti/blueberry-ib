@@ -12,8 +12,8 @@ export default defineNuxtConfig({
     host: "0.0.0.0",
     port: 9876,
     https: {
-      key: "/etc/nginx/ssl/lilith.key",
-      cert: "/etc/nginx/ssl/blueberry.lan.crt",
+      key: "ssl/lilith.key",
+      cert: "ssl/blueberry.lan.crt",
     },
   },
 
@@ -42,7 +42,6 @@ export default defineNuxtConfig({
   // Vite-specific server config (covers vite dev server)
   vite: {
     plugins: [tailwindcss()],
-    server: {},
   },
 
   typescript: {

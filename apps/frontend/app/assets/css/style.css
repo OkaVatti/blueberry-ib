@@ -1,0 +1,198 @@
+@import "tailwindcss";
+
+/* Base + reset adjustments */
+html,
+body,
+#__nuxt,
+#__nuxt-root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  font-family: var(--ui);
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Neobrutalist primitives */
+.nb-panel {
+  background: var(--panel);
+  border: var(--border-heavy) solid var(--muted);
+  border-radius: calc(var(--radius) - 2px);
+  box-shadow: 8px 8px 0 0 var(--muted);
+  padding: 1rem;
+}
+
+.nb-panel--thin {
+  border-width: var(--border-light);
+  box-shadow: 4px 4px 0 0 var(--muted);
+}
+
+/* Buttons */
+.nb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  border: var(--border-light) solid var(--muted);
+  border-radius: 6px;
+  font-weight: 700;
+  cursor: pointer;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), var(--panel));
+  box-shadow: 6px 6px 0 0 var(--muted);
+  transition: transform 0.06s ease;
+}
+.nb-btn:active {
+  transform: translateY(1px);
+  box-shadow: 4px 4px 0 0 var(--muted);
+}
+.nb-btn--primary {
+  border-color: var(--accent);
+}
+.nb-btn--danger {
+  border-color: var(--danger);
+}
+
+/* Top navigation */
+.nb-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  background: linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.98),
+    rgba(255, 255, 255, 0.96)
+  );
+  border-bottom: var(--border-heavy) solid var(--muted);
+}
+
+/* Sidebar */
+.nb-sidebar {
+  width: 260px;
+  min-width: 200px;
+  border-right: var(--border-heavy) solid var(--muted);
+  background: linear-gradient(180deg, var(--panel), rgba(255, 255, 255, 0.98));
+  padding: 1rem;
+  box-shadow: 6px 0 0 0 var(--muted);
+  height: calc(100vh - 72px);
+  overflow-y: auto;
+}
+
+/* Boards list */
+.board-item {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.6rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.board-item:hover {
+  border: var(--border-light) solid var(--muted);
+  transform: translateX(2px);
+}
+
+/* Post card */
+.post {
+  border: var(--border-light) solid var(--muted);
+  padding: 1rem;
+  border-radius: 8px;
+  box-shadow: 6px 6px 0 0 var(--muted);
+  background: linear-gradient(180deg, var(--panel), rgba(255, 255, 255, 0.98));
+}
+.post-meta {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+.avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-family: var(--mono);
+  border: var(--border-light) solid var(--muted);
+  box-shadow: 4px 4px 0 0 var(--muted);
+}
+
+/* post content */
+.post-content {
+  margin-top: 0.6rem;
+  font-size: 0.98rem;
+  line-height: 1.35;
+  color: var(--ink-muted);
+}
+.post-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* tag chips */
+.tag {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.8rem;
+  border: var(--border-light) solid var(--muted);
+}
+.tag--accent {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 4px 4px 0 0 rgba(30, 144, 255, 0.06);
+}
+
+/* small utilities */
+.kv {
+  font-family: var(--mono);
+  font-weight: 700;
+}
+.muted {
+  color: var(--ink-muted);
+}
+
+/* media grid (images attached to posts) */
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+.media-grid img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+  border: var(--border-light) solid var(--muted);
+}
+
+/* floating moderation badge */
+.mod-badge {
+  background: var(--danger);
+  color: white;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  font-weight: 800;
+  font-size: 0.75rem;
+}
+
+/* responsive */
+@media (max-width: 920px) {
+  .nb-sidebar {
+    display: none;
+  }
+  .media-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
