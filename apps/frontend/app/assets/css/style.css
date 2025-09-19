@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import url(./colours/defaultColors.css);
 
 /* Base + reset adjustments */
 html,

@@ -299,10 +299,13 @@ ____
 > Moderators can report posts, provide reason, and submit for manuals review.
 > Moderators can also review reported posts, provide a reason, and have the post 
 > deleted using the tools at their disposal.
+
 > Administrators can report and moderate posts the same way moderators can, on 
 > top of all that, they can view all posts made by users, from from their 
 > dashboard. They also have the ability to kick, temp-board-ban, perma-board-ban
+
 > users at their discression, given a good reason. 
+
 > Owner and Co-Owner have the ability to do the same as all other roles, but, are
 > also able temp-site-ban and perma-site-ban users.
 

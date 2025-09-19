@@ -5,8 +5,8 @@
   --muted: #e9e6df;
   --ink: #0b1220;
   --ink-muted: #475569;
-  --accent: #1e90ff; /* blue: primary accent for links / boards */
-  --accent-2: #ff5a5f; /* coral: actions / alerts */
+  --accent: #1e90ff; /* primary accent for links / boards */
+  --accent-2: #ff5a5f; /* actions / alerts */
   --success: #22c55e;
   --danger: #ef4444;
   --karma: #f59e0b;

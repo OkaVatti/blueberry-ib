@@ -8,12 +8,12 @@ services:
       - .env         # optional: will load DATABASE_URL if you keep it here; not required for DB service vars below
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: xc4rRHLlFR449zPUmkLBMxjrcfOYm1Yv
       POSTGRES_DB: blueberry
       # Optionally set locale/timezone:
       # TZ: "UTC"
     ports:
-      - "5432:5432"
+      - "3005:3005"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./initdb:/docker-entrypoint-initdb.d:ro  # optional: place .sql/.sh init scripts here (only run on first init)
