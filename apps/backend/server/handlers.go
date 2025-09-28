@@ -1,8 +1,11 @@
+// apps/backend/server/handlers.go
 package server
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -10,7 +13,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// Server struct kept as before
 type Server struct {
 	DB     *gorm.DB
 	Config Config
@@ -22,14 +24,15 @@ func Run(cfg Config) error {
 	if err != nil {
 		return err
 	}
+
 	s := &Server{
 		DB:     db,
 		Config: cfg,
 		WSHub:  NewWSHub(),
 	}
 
-	// seed default boards
-	seedDefaultBoards(db)
+	// Seed default boards and admin user
+	seedDefaults(db)
 
 	go s.WSHub.Run()
 
@@ -42,12 +45,15 @@ func Run(cfg Config) error {
 			"http://127.0.0.1:9876",
 			"http://localhost:5173",
 			"http://127.0.0.1:5173",
+			"https://localhost:9876",
+			"https://127.0.0.1:9876",
 		},
-		AllowMethods: []string{echo.GET, echo.HEAD, echo.PUT, echo.PATCH, echo.POST, echo.DELETE},
-		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		AllowMethods:     []string{echo.GET, echo.HEAD, echo.PUT, echo.PATCH, echo.POST, echo.DELETE, echo.OPTIONS},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With"},
+		AllowCredentials: true,
 	}))
 
-	// attach server instance
+	// Attach server to context
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			c.Set("server", s)
@@ -55,79 +61,100 @@ func Run(cfg Config) error {
 		}
 	})
 
+	// API routes
 	api := e.Group("/api/v1")
-	api.GET("/health", func(c echo.Context) error { return c.JSON(http.StatusOK, echo.Map{"status": "ok"}) })
+	api.GET("/health", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, echo.Map{"status": "ok", "time": time.Now()})
+	})
 
-	// auth
+	// Auth routes
 	api.POST("/auth/register", s.Register)
 	api.POST("/auth/login", s.Login)
+	api.POST("/auth/logout", s.AuthMiddleware(s.Logout))
+	api.GET("/auth/me", s.AuthMiddleware(s.GetMe))
 
-	// boards
+	// Board routes
 	api.GET("/boards", s.ListBoards)
+	api.GET("/boards/:slug", s.GetBoard)
 	api.POST("/boards", s.AuthMiddleware(s.CreateBoard))
+	api.PUT("/boards/:slug", s.RequireRoles("owner", "coowner", "admin")(s.UpdateBoard))
+	api.DELETE("/boards/:slug", s.RequireRoles("owner", "coowner")(s.DeleteBoard))
 
-	// posts
+	// Board membership
+	api.POST("/boards/:slug/join", s.AuthMiddleware(s.JoinBoard))
+	api.POST("/boards/:slug/leave", s.AuthMiddleware(s.LeaveBoard))
+	api.GET("/boards/:slug/members", s.ListBoardMembers)
+
+	// Posts
 	api.GET("/boards/:slug/posts", s.ListPosts)
 	api.POST("/boards/:slug/posts", s.AuthMiddleware(s.CreatePost))
+	api.GET("/posts/:id", s.GetPost)
+	api.PUT("/posts/:id", s.AuthMiddleware(s.UpdatePost))
+	api.DELETE("/posts/:id", s.AuthMiddleware(s.DeletePost))
 
-	// comments
-	api.GET("/posts/:id/comments", s.ListComments)
-	api.POST("/posts/:id/comments", s.AuthMiddleware(s.CreateComment))
-
-	// threads
+	// Threads
 	api.GET("/boards/:slug/threads", s.ListThreadsForBoard)
 	api.POST("/boards/:slug/threads", s.AuthMiddleware(s.CreateThread))
 	api.GET("/threads/:id", s.GetThread)
 	api.GET("/threads/:id/posts", s.ListPostsForThread)
 	api.POST("/threads/:id/posts", s.AuthMiddleware(s.CreatePostInThread))
+	api.POST("/threads/:id/lock", s.RequireRoles("moderator", "admin", "coowner", "owner")(s.LockThread))
+	api.POST("/threads/:id/pin", s.RequireRoles("moderator", "admin", "coowner", "owner")(s.PinThread))
 
-	// votes
+	// Comments
+	api.GET("/posts/:id/comments", s.ListComments)
+	api.POST("/posts/:id/comments", s.AuthMiddleware(s.CreateComment))
+	api.GET("/comments/:id", s.GetComment)
+	api.DELETE("/comments/:id", s.AuthMiddleware(s.DeleteComment))
+
+	// Voting/Interactions
 	api.POST("/posts/:id/vote", s.AuthMiddleware(s.VotePost))
 	api.POST("/comments/:id/vote", s.AuthMiddleware(s.VoteComment))
 	api.POST("/threads/:id/vote", s.AuthMiddleware(s.VoteThread))
+	api.POST("/posts/:id/repost", s.AuthMiddleware(s.RepostPost))
+	api.POST("/posts/:id/quote-repost", s.AuthMiddleware(s.QuoteRepostPost))
 
-	// ws (keep at root)
-	e.GET("/ws", func(c echo.Context) error {
-		s.WSHub.ServeWS(c.Response(), c.Request())
-		return nil
-	})
+	// User routes
+	api.GET("/users/:username", s.GetUserProfile)
+	api.GET("/users/:username/posts", s.GetUserPosts)
+	api.GET("/users/:username/threads", s.GetUserThreads)
+	api.GET("/users/:username/comments", s.GetUserComments)
+	api.PUT("/users/:username", s.AuthMiddleware(s.UpdateUserProfile))
 
-	api.DELETE("/posts/:id", s.RequireRoles("owner", "coowner", "admin", "moderator")(s.AdminDeletePost))
+	// Search
+	api.GET("/search", s.Search)
+
+	// Admin routes
 	api.GET("/admin/users", s.RequireRoles("owner", "coowner", "admin")(s.AdminListUsers))
 	api.POST("/admin/users/:id/ban", s.RequireRoles("owner", "coowner", "admin", "moderator")(s.AdminBanUser))
 	api.DELETE("/admin/posts/:id", s.RequireRoles("owner", "coowner", "admin", "moderator")(s.AdminDeletePost))
 	api.DELETE("/admin/comments/:id", s.RequireRoles("owner", "coowner", "admin", "moderator")(s.AdminDeleteComment))
 	api.GET("/admin/logs", s.RequireRoles("owner", "coowner", "admin")(s.AdminListLogs))
 
+	// Markdown rendering
 	api.POST("/render", s.RenderMarkdownEndpoint)
+
+	// WebSocket
+	e.GET("/ws", func(c echo.Context) error {
+		s.WSHub.ServeWS(c.Response(), c.Request())
+		return nil
+	})
 
 	return e.Start(":" + cfg.Port)
 }
 
-// RenderMarkdownEndpoint accepts { "markdown": "..." } and returns { "html": "..." }
-func (s *Server) RenderMarkdownEndpoint(c echo.Context) error {
-	type req struct {
-		Markdown string `json:"markdown"`
+// Seed defaults
+func seedDefaults(db *gorm.DB) {
+	// Create default boards
+	defaultBoards := []Board{
+		{Name: "Random", Slug: "b", Description: "Random posts and discussions", IsDefault: true},
+		{Name: "Technology", Slug: "tech", Description: "Technology and programming", IsDefault: true},
+		{Name: "Art", Slug: "art", Description: "Art, design, and creativity", IsDefault: true},
+		{Name: "Gaming", Slug: "games", Description: "Video games and gaming culture", IsDefault: true},
+		{Name: "Music", Slug: "music", Description: "Music discussion and sharing", IsDefault: true},
 	}
-	var r req
-	if err := c.Bind(&r); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid"})
-	}
-	html, err := RenderMarkdown(r.Markdown)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "render failed"})
-	}
-	return c.JSON(http.StatusOK, echo.Map{"html": html})
-}
 
-// seedDefaultBoards creates basic boards if they don't exist
-func seedDefaultBoards(db *gorm.DB) {
-	defaults := []Board{
-		{Name: "Random", Slug: "b", Description: "Random board", IsDefault: true},
-		{Name: "Technology", Slug: "tech", Description: "Technology board", IsDefault: true},
-		{Name: "Art", Slug: "art", Description: "Art and creative", IsDefault: true},
-	}
-	for _, b := range defaults {
+	for _, b := range defaultBoards {
 		var exists Board
 		if err := db.Where("slug = ?", b.Slug).First(&exists).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
@@ -135,9 +162,24 @@ func seedDefaultBoards(db *gorm.DB) {
 			}
 		}
 	}
+
+	// Create admin user if not exists
+	var adminUser User
+	if err := db.Where("username = ?", "admin").First(&adminUser).Error; err == gorm.ErrRecordNotFound {
+		hash, _ := HashPassword("admin123")
+		admin := User{
+			Username:     "admin",
+			DisplayName:  "Administrator",
+			Email:        "admin@blueberry.local",
+			PasswordHash: hash,
+			Role:         "owner",
+			Bio:          "Site administrator",
+		}
+		db.Create(&admin)
+	}
 }
 
-// --- Helpers to obtain server & user from context ---
+// Helper functions
 func serverFromContext(c echo.Context) *Server {
 	return c.Get("server").(*Server)
 }
@@ -153,40 +195,76 @@ func userFromClaims(c echo.Context) (*User, error) {
 	if err := s.DB.First(&user, "id = ?", claims.UserID).Error; err != nil {
 		return nil, err
 	}
+	// Check if user is banned
+	if user.IsBanned {
+		if user.BannedUntil != nil && time.Now().After(*user.BannedUntil) {
+			// Ban expired, unban user
+			user.IsBanned = false
+			user.BannedUntil = nil
+			s.DB.Save(&user)
+		} else {
+			return nil, echo.NewHTTPError(http.StatusForbidden, "user is banned")
+		}
+	}
 	return &user, nil
 }
 
-// --- Handlers (concise implementations) ---
-
-// Register expects: { "username","email","password" }
+// Auth endpoints
 func (s *Server) Register(c echo.Context) error {
 	type req struct {
-		Username string `json:"username"`
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Username    string `json:"username" validate:"required,min=3,max=20"`
+		Email       string `json:"email" validate:"required,email"`
+		Password    string `json:"password" validate:"required,min=6"`
+		DisplayName string `json:"displayName"`
 	}
 	var r req
 	if err := c.Bind(&r); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid"})
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid input"})
 	}
+
+	// Check if user exists
+	var existing User
+	if err := s.DB.Where("username = ? OR email = ?", r.Username, r.Email).First(&existing).Error; err == nil {
+		return c.JSON(http.StatusConflict, echo.Map{"error": "user already exists"})
+	}
+
 	hash, err := HashPassword(r.Password)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "hash failed"})
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "password hashing failed"})
 	}
+
 	user := User{
-		Username:     strings.TrimSpace(r.Username),
-		Email:        strings.TrimSpace(r.Email),
+		Username:     strings.ToLower(strings.TrimSpace(r.Username)),
+		DisplayName:  r.DisplayName,
+		Email:        strings.ToLower(strings.TrimSpace(r.Email)),
 		PasswordHash: hash,
 		Role:         "user",
 	}
-	if err := s.DB.Create(&user).Error; err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "user already exists or invalid"})
+
+	if user.DisplayName == "" {
+		user.DisplayName = user.Username
 	}
+
+	if err := s.DB.Create(&user).Error; err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "registration failed"})
+	}
+
 	token, _ := GenerateJWT(s.Config.JWTSecret, &user)
-	return c.JSON(http.StatusCreated, echo.Map{"token": token, "user": echo.Map{"id": user.ID, "username": user.Username}})
+
+	// Broadcast new user event
+	s.WSHub.broadcast <- WSMessage{Type: "user.registered", Data: echo.Map{"username": user.Username}}
+
+	return c.JSON(http.StatusCreated, echo.Map{
+		"token": token,
+		"user": echo.Map{
+			"id":          user.ID,
+			"username":    user.Username,
+			"displayName": user.DisplayName,
+			"role":        user.Role,
+		},
+	})
 }
 
-// Login expects: { "usernameOrEmail", "password" }
 func (s *Server) Login(c echo.Context) error {
 	type req struct {
 		UsernameOrEmail string `json:"usernameOrEmail"`
@@ -194,24 +272,124 @@ func (s *Server) Login(c echo.Context) error {
 	}
 	var r req
 	if err := c.Bind(&r); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid"})
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid input"})
 	}
+
 	var user User
 	if err := s.DB.Where("username = ? OR email = ?", r.UsernameOrEmail, r.UsernameOrEmail).First(&user).Error; err != nil {
 		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "invalid credentials"})
 	}
+
 	ok, err := VerifyPassword(r.Password, user.PasswordHash)
 	if err != nil || !ok {
 		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "invalid credentials"})
 	}
+
+	// Check ban status
+	if user.IsBanned {
+		if user.BannedUntil != nil && time.Now().After(*user.BannedUntil) {
+			// Ban expired
+			user.IsBanned = false
+			user.BannedUntil = nil
+			s.DB.Save(&user)
+		} else {
+			return c.JSON(http.StatusForbidden, echo.Map{"error": "account is banned"})
+		}
+	}
+
 	token, _ := GenerateJWT(s.Config.JWTSecret, &user)
-	return c.JSON(http.StatusOK, echo.Map{"token": token, "user": echo.Map{"id": user.ID, "username": user.Username}})
+	return c.JSON(http.StatusOK, echo.Map{
+		"token": token,
+		"user": echo.Map{
+			"id":          user.ID,
+			"username":    user.Username,
+			"displayName": user.DisplayName,
+			"role":        user.Role,
+			"ink":         user.Ink,
+		},
+	})
 }
 
+func (s *Server) Logout(c echo.Context) error {
+	// In a real app, you might want to blacklist the token
+	return c.JSON(http.StatusOK, echo.Map{"message": "logged out"})
+}
+
+func (s *Server) GetMe(c echo.Context) error {
+	user, err := userFromClaims(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"})
+	}
+
+	return c.JSON(http.StatusOK, echo.Map{
+		"id":           user.ID,
+		"username":     user.Username,
+		"displayName":  user.DisplayName,
+		"email":        user.Email,
+		"role":         user.Role,
+		"ink":          user.Ink,
+		"bio":          user.Bio,
+		"profileImage": user.ProfileImage,
+		"createdAt":    user.CreatedAt,
+	})
+}
+
+// Board endpoints
 func (s *Server) ListBoards(c echo.Context) error {
 	var boards []Board
-	s.DB.Order("created_at desc").Find(&boards)
-	return c.JSON(http.StatusOK, boards)
+	query := s.DB.Order("is_default DESC, created_at DESC")
+
+	// Optional filters
+	if search := c.QueryParam("search"); search != "" {
+		query = query.Where("name ILIKE ? OR description ILIKE ?", "%"+search+"%", "%"+search+"%")
+	}
+
+	query.Find(&boards)
+
+	// Get member counts
+	type BoardWithStats struct {
+		Board
+		MemberCount int64 `json:"memberCount"`
+		PostCount   int64 `json:"postCount"`
+	}
+
+	results := make([]BoardWithStats, len(boards))
+	for i, board := range boards {
+		var memberCount, postCount int64
+		s.DB.Model(&BoardMembership{}).Where("board_id = ?", board.ID).Count(&memberCount)
+		s.DB.Model(&Post{}).Where("board_id = ?", board.ID).Count(&postCount)
+
+		results[i] = BoardWithStats{
+			Board:       board,
+			MemberCount: memberCount,
+			PostCount:   postCount,
+		}
+	}
+
+	return c.JSON(http.StatusOK, results)
+}
+
+func (s *Server) GetBoard(c echo.Context) error {
+	slug := c.Param("slug")
+	var board Board
+	if err := s.DB.Where("slug = ?", slug).First(&board).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "board not found"})
+	}
+
+	// Get stats
+	var memberCount, postCount, threadCount int64
+	s.DB.Model(&BoardMembership{}).Where("board_id = ?", board.ID).Count(&memberCount)
+	s.DB.Model(&Post{}).Where("board_id = ?", board.ID).Count(&postCount)
+	s.DB.Model(&Thread{}).Where("board_id = ?", board.ID).Count(&threadCount)
+
+	return c.JSON(http.StatusOK, echo.Map{
+		"board": board,
+		"stats": echo.Map{
+			"members": memberCount,
+			"posts":   postCount,
+			"threads": threadCount,
+		},
+	})
 }
 
 func (s *Server) CreateBoard(c echo.Context) error {
@@ -222,403 +400,637 @@ func (s *Server) CreateBoard(c echo.Context) error {
 	}
 	var r req
 	if err := c.Bind(&r); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid"})
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid input"})
 	}
+
 	user, err := userFromClaims(c)
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauth"})
+		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"})
 	}
+
 	board := Board{
 		Name:        r.Name,
-		Slug:        r.Slug,
+		Slug:        strings.ToLower(strings.TrimSpace(r.Slug)),
 		Description: r.Description,
 		CreatedByID: &user.ID,
 	}
+
 	if err := s.DB.Create(&board).Error; err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "failed to create board"})
 	}
+
+	// Auto-join creator as admin
+	membership := BoardMembership{
+		BoardID: board.ID,
+		UserID:  user.ID,
+		Role:    "admin",
+	}
+	s.DB.Create(&membership)
+
+	s.WSHub.broadcast <- WSMessage{Type: "board.created", Data: board}
 	return c.JSON(http.StatusCreated, board)
 }
 
+func (s *Server) UpdateBoard(c echo.Context) error {
+	slug := c.Param("slug")
+	var board Board
+	if err := s.DB.Where("slug = ?", slug).First(&board).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "board not found"})
+	}
+
+	type req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Settings    string `json:"settings"`
+	}
+	var r req
+	if err := c.Bind(&r); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid input"})
+	}
+
+	if r.Name != "" {
+		board.Name = r.Name
+	}
+	if r.Description != "" {
+		board.Description = r.Description
+	}
+	if r.Settings != "" {
+		board.Settings = r.Settings
+	}
+
+	if err := s.DB.Save(&board).Error; err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "update failed"})
+	}
+
+	return c.JSON(http.StatusOK, board)
+}
+
+func (s *Server) DeleteBoard(c echo.Context) error {
+	slug := c.Param("slug")
+	var board Board
+	if err := s.DB.Where("slug = ?", slug).First(&board).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "board not found"})
+	}
+
+	if board.IsDefault {
+		return c.JSON(http.StatusForbidden, echo.Map{"error": "cannot delete default board"})
+	}
+
+	if err := s.DB.Delete(&board).Error; err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "delete failed"})
+	}
+
+	s.WSHub.broadcast <- WSMessage{Type: "board.deleted", Data: echo.Map{"slug": slug}}
+	return c.JSON(http.StatusOK, echo.Map{"message": "board deleted"})
+}
+
+// Board membership
+func (s *Server) JoinBoard(c echo.Context) error {
+	slug := c.Param("slug")
+	user, err := userFromClaims(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"})
+	}
+
+	var board Board
+	if err := s.DB.Where("slug = ?", slug).First(&board).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "board not found"})
+	}
+
+	// Check if already member
+	var existing BoardMembership
+	if err := s.DB.Where("board_id = ? AND user_id = ?", board.ID, user.ID).First(&existing).Error; err == nil {
+		return c.JSON(http.StatusConflict, echo.Map{"error": "already a member"})
+	}
+
+	membership := BoardMembership{
+		BoardID: board.ID,
+		UserID:  user.ID,
+		Role:    "member",
+	}
+
+	if err := s.DB.Create(&membership).Error; err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "join failed"})
+	}
+
+	s.WSHub.broadcast <- WSMessage{
+		Type: "board.joined",
+		Data: echo.Map{"board": slug, "user": user.Username},
+	}
+
+	return c.JSON(http.StatusOK, membership)
+}
+
+func (s *Server) LeaveBoard(c echo.Context) error {
+	slug := c.Param("slug")
+	user, err := userFromClaims(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"})
+	}
+
+	var board Board
+	if err := s.DB.Where("slug = ?", slug).First(&board).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "board not found"})
+	}
+
+	if err := s.DB.Where("board_id = ? AND user_id = ?", board.ID, user.ID).Delete(&BoardMembership{}).Error; err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "leave failed"})
+	}
+
+	return c.JSON(http.StatusOK, echo.Map{"message": "left board"})
+}
+
+func (s *Server) ListBoardMembers(c echo.Context) error {
+	slug := c.Param("slug")
+	var board Board
+	if err := s.DB.Where("slug = ?", slug).First(&board).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "board not found"})
+	}
+
+	var members []struct {
+		BoardMembership
+		User User
+	}
+
+	s.DB.Table("board_memberships").
+		Select("board_memberships.*, users.*").
+		Joins("JOIN users ON users.id = board_memberships.user_id").
+		Where("board_memberships.board_id = ?", board.ID).
+		Scan(&members)
+
+	return c.JSON(http.StatusOK, members)
+}
+
+// Post endpoints
 func (s *Server) ListPosts(c echo.Context) error {
 	slug := c.Param("slug")
 	var board Board
 	if err := s.DB.Where("slug = ?", slug).First(&board).Error; err != nil {
 		return c.JSON(http.StatusNotFound, echo.Map{"error": "board not found"})
 	}
-	var posts []Post
-	s.DB.Where("board_id = ?", board.ID).Order("created_at desc").Find(&posts)
-	return c.JSON(http.StatusOK, posts)
-}
 
-func (s *Server) VotePost(c echo.Context) error {
-	type req struct {
-		Value int8 `json:"value"` // 1 or -1
-	}
-	var r req
-	if err := c.Bind(&r); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid"})
-	}
-	if r.Value != 1 && r.Value != -1 {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "value must be 1 or -1"})
-	}
-	postIDStr := c.Param("id")
-	pid, err := uuid.Parse(postIDStr)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid id"})
-	}
-	user, err := userFromClaims(c)
-	if err != nil {
-		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauth"})
-	}
-	// upsert vote
-	var v Vote
-	if err := s.DB.Where("user_id = ? AND target_id = ? AND target_type = ?", user.ID, pid, "post").First(&v).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			nv := Vote{
-				UserID:     user.ID,
-				TargetID:   pid,
-				TargetType: "post",
-				Value:      r.Value,
-			}
-			s.DB.Create(&nv)
-		} else {
-			return c.JSON(http.StatusInternalServerError, echo.Map{"error": "db error"})
-		}
-	} else {
-		// update
-		v.Value = r.Value
-		s.DB.Save(&v)
-	}
-	// recalc tally (simple)
-	var likes int64
-	var dislikes int64
-	s.DB.Model(&Vote{}).Where("target_id = ? AND target_type = ? AND value = 1", pid, "post").Count(&likes)
-	s.DB.Model(&Vote{}).Where("target_id = ? AND target_type = ? AND value = -1", pid, "post").Count(&dislikes)
-	s.DB.Model(&Post{}).Where("id = ?", pid).Updates(map[string]interface{}{"likes": likes, "dislikes": dislikes})
-	return c.JSON(http.StatusOK, echo.Map{"likes": likes, "dislikes": dislikes})
-}
-
-// CreateThread - create a thread and an initial post in that thread
-func (s *Server) CreateThread(c echo.Context) error {
-	type req struct {
-		Title     string `json:"title"`
-		PostTitle string `json:"post_title"`
-		Content   string `json:"content"`
-	}
-	var r req
-	if err := c.Bind(&r); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid"})
-	}
-	user, err := userFromClaims(c)
-	if err != nil {
-		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauth"})
-	}
-	slug := c.Param("slug")
-	var board Board
-	if err := s.DB.Where("slug = ?", slug).First(&board).Error; err != nil {
-		return c.JSON(http.StatusNotFound, echo.Map{"error": "board not found"})
-	}
-	thread := Thread{
-		BoardID: board.ID,
-		UserID:  user.ID,
-		Title:   r.Title,
-	}
-	if err := s.DB.Create(&thread).Error; err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "failed to create thread"})
-	}
-
-	// create initial post in thread
-	html, _ := RenderMarkdown(r.Content)
-	post := Post{
-		BoardID:     board.ID,
-		ThreadID:    &thread.ID,
-		UserID:      user.ID,
-		Title:       r.PostTitle,
-		Content:     r.Content,
-		ContentHTML: html,
-	}
-	if err := s.DB.Create(&post).Error; err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "failed to create post"})
-	}
-
-	// broadcast events
-	s.WSHub.broadcast <- WSMessage{Type: "thread.created", Data: thread}
-	s.WSHub.broadcast <- WSMessage{Type: "post.created", Data: post}
-
-	return c.JSON(http.StatusCreated, echo.Map{"thread": thread, "post": post})
-}
-
-func (s *Server) ListThreadsForBoard(c echo.Context) error {
-	slug := c.Param("slug")
-	var board Board
-	if err := s.DB.Where("slug = ?", slug).First(&board).Error; err != nil {
-		return c.JSON(http.StatusNotFound, echo.Map{"error": "board not found"})
-	}
-	var threads []Thread
-	s.DB.Where("board_id = ?", board.ID).Order("created_at desc").Find(&threads)
-	return c.JSON(http.StatusOK, threads)
-}
-
-func (s *Server) GetThread(c echo.Context) error {
-	idStr := c.Param("id")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid id"})
-	}
-	var t Thread
-	if err := s.DB.First(&t, "id = ?", id).Error; err != nil {
-		return c.JSON(http.StatusNotFound, echo.Map{"error": "thread not found"})
-	}
-	return c.JSON(http.StatusOK, t)
-}
-
-func (s *Server) ListPostsForThread(c echo.Context) error {
-	idStr := c.Param("id")
-	id, err := uuid.Parse(idStr)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid id"})
-	}
-	var posts []Post
-	s.DB.Where("thread_id = ?", id).Order("created_at asc").Find(&posts)
-	return c.JSON(http.StatusOK, posts)
-}
-
-// CreatePost (enhanced to support optional thread_id sent by frontend)
-func (s *Server) CreatePost(c echo.Context) error {
-	type req struct {
-		Title    string  `json:"title"`
-		Content  string  `json:"content"`
-		ThreadID *string `json:"thread_id,omitempty"`
-	}
-	var r req
-	if err := c.Bind(&r); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid"})
-	}
-	user, err := userFromClaims(c)
-	if err != nil {
-		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauth"})
-	}
-	slug := c.Param("slug")
-	var board Board
-	if err := s.DB.Where("slug = ?", slug).First(&board).Error; err != nil {
-		return c.JSON(http.StatusNotFound, echo.Map{"error": "board not found"})
-	}
-
-	var threadID *uuid.UUID
-	if r.ThreadID != nil && *r.ThreadID != "" {
-		tid, err := uuid.Parse(*r.ThreadID)
-		if err == nil {
-			// verify thread exists and is in same board
-			var th Thread
-			if err := s.DB.First(&th, "id = ? AND board_id = ?", tid, board.ID).Error; err == nil {
-				threadID = &tid
-			}
+	limit := 20
+	if l := c.QueryParam("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
 		}
 	}
 
-	html, _ := RenderMarkdown(r.Content)
-	post := Post{
-		BoardID:     board.ID,
-		ThreadID:    threadID,
-		UserID:      user.ID,
-		Title:       r.Title,
-		Content:     r.Content,
-		ContentHTML: html,
+	offset := 0
+	if o := c.QueryParam("offset"); o != "" {
+		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
+			offset = parsed
+		}
 	}
-	if err := s.DB.Create(&post).Error; err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "failed to create post"})
-	}
-	s.WSHub.broadcast <- WSMessage{Type: "post.created", Data: post}
-	return c.JSON(http.StatusCreated, post)
+
+	var posts []Post
+	s.DB.Where("board_id = ? AND thread_id IS NULL", board.ID).
+		Preload("User").
+		Order("created_at desc").
+		Limit(limit).
+		Offset(offset).
+		Find(&posts)
+
+	return c.JSON(http.StatusOK, posts)
 }
 
-// CreatePostInThread receives posts created directly in a thread URL
-func (s *Server) CreatePostInThread(c echo.Context) error {
+func (s *Server) GetPost(c echo.Context) error {
+	id := c.Param("id")
+	pid, err := uuid.Parse(id)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid id"})
+	}
+
+	var post Post
+	if err := s.DB.Preload("User").Preload("Board").First(&post, "id = ?", pid).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "post not found"})
+	}
+
+	return c.JSON(http.StatusOK, post)
+}
+
+func (s *Server) UpdatePost(c echo.Context) error {
+	id := c.Param("id")
+	pid, err := uuid.Parse(id)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid id"})
+	}
+
+	user, err := userFromClaims(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"})
+	}
+
+	var post Post
+	if err := s.DB.First(&post, "id = ?", pid).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "post not found"})
+	}
+
+	// Check ownership
+	if post.UserID != user.ID && user.Role != "admin" && user.Role != "owner" && user.Role != "coowner" {
+		return c.JSON(http.StatusForbidden, echo.Map{"error": "not authorized"})
+	}
+
 	type req struct {
 		Title   string `json:"title"`
 		Content string `json:"content"`
 	}
 	var r req
 	if err := c.Bind(&r); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid"})
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid input"})
 	}
-	user, err := userFromClaims(c)
-	if err != nil {
-		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauth"})
+
+	if r.Title != "" {
+		post.Title = r.Title
 	}
-	thIDStr := c.Param("id")
-	tid, err := uuid.Parse(thIDStr)
+	if r.Content != "" {
+		post.Content = r.Content
+		html, _ := RenderMarkdown(r.Content)
+		post.ContentHTML = html
+	}
+
+	if err := s.DB.Save(&post).Error; err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "update failed"})
+	}
+
+	s.WSHub.broadcast <- WSMessage{Type: "post.updated", Data: post}
+	return c.JSON(http.StatusOK, post)
+}
+
+// Repost functionality
+func (s *Server) RepostPost(c echo.Context) error {
+	id := c.Param("id")
+	pid, err := uuid.Parse(id)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid id"})
 	}
-	var th Thread
-	if err := s.DB.First(&th, "id = ?", tid).Error; err != nil {
-		return c.JSON(http.StatusNotFound, echo.Map{"error": "thread not found"})
+
+	user, err := userFromClaims(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"})
 	}
 
-	html, _ := RenderMarkdown(r.Content)
-	post := Post{
-		BoardID:     th.BoardID,
-		ThreadID:    &th.ID,
-		UserID:      user.ID,
-		Title:       r.Title,
-		Content:     r.Content,
-		ContentHTML: html,
+	type req struct {
+		BoardID string `json:"boardId"`
 	}
-	if err := s.DB.Create(&post).Error; err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "failed to create post"})
+	var r req
+	if err := c.Bind(&r); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid input"})
 	}
-	s.WSHub.broadcast <- WSMessage{Type: "post.created", Data: post}
-	return c.JSON(http.StatusCreated, post)
+
+	boardID, err := uuid.Parse(r.BoardID)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid board id"})
+	}
+
+	// Check if post exists
+	var post Post
+	if err := s.DB.First(&post, "id = ?", pid).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "post not found"})
+	}
+
+	// Check if already reposted by this user to this board
+	var existing Repost
+	if err := s.DB.Where("user_id = ? AND original_id = ? AND board_id = ?", user.ID, pid, boardID).First(&existing).Error; err == nil {
+		return c.JSON(http.StatusConflict, echo.Map{"error": "already reposted"})
+	}
+
+	repost := Repost{
+		UserID:       user.ID,
+		OriginalType: "post",
+		OriginalID:   pid,
+		BoardID:      boardID,
+	}
+
+	if err := s.DB.Create(&repost).Error; err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "repost failed"})
+	}
+
+	s.WSHub.broadcast <- WSMessage{Type: "post.reposted", Data: repost}
+	return c.JSON(http.StatusCreated, repost)
 }
 
-// CreateComment (renders markdown & stores sanitized HTML)
-func (s *Server) CreateComment(c echo.Context) error {
+func (s *Server) QuoteRepostPost(c echo.Context) error {
+	id := c.Param("id")
+	pid, err := uuid.Parse(id)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid id"})
+	}
+
+	user, err := userFromClaims(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"})
+	}
+
 	type req struct {
+		BoardID string `json:"boardId"`
 		Content string `json:"content"`
 	}
 	var r req
 	if err := c.Bind(&r); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid"})
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid input"})
 	}
-	postIDStr := c.Param("id")
-	pid, err := uuid.Parse(postIDStr)
+
+	boardID, err := uuid.Parse(r.BoardID)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid post id"})
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid board id"})
 	}
-	user, err := userFromClaims(c)
-	if err != nil {
-		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauth"})
+
+	// Check if post exists
+	var post Post
+	if err := s.DB.First(&post, "id = ?", pid).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "post not found"})
 	}
+
 	html, _ := RenderMarkdown(r.Content)
-	comment := Comment{
-		PostID:      pid,
-		UserID:      user.ID,
-		Content:     r.Content,
-		ContentHTML: html,
+
+	quoteRepost := QuoteRepost{
+		UserID:       user.ID,
+		OriginalType: "post",
+		OriginalID:   pid,
+		BoardID:      boardID,
+		Content:      r.Content,
+		ContentHTML:  html,
 	}
-	if err := s.DB.Create(&comment).Error; err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "failed to create comment"})
+
+	if err := s.DB.Create(&quoteRepost).Error; err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "quote repost failed"})
 	}
-	s.WSHub.broadcast <- WSMessage{Type: "comment.created", Data: comment}
-	return c.JSON(http.StatusCreated, comment)
+
+	s.WSHub.broadcast <- WSMessage{Type: "post.quote_reposted", Data: quoteRepost}
+	return c.JSON(http.StatusCreated, quoteRepost)
 }
 
-func (s *Server) ListComments(c echo.Context) error {
-	postIDStr := c.Param("id")
-	pid, err := uuid.Parse(postIDStr)
+// Thread endpoints
+func (s *Server) LockThread(c echo.Context) error {
+	id := c.Param("id")
+	tid, err := uuid.Parse(id)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid id"})
 	}
+
+	var thread Thread
+	if err := s.DB.First(&thread, "id = ?", tid).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "thread not found"})
+	}
+
+	thread.IsLocked = !thread.IsLocked
+	if err := s.DB.Save(&thread).Error; err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "lock failed"})
+	}
+
+	action := "locked"
+	if !thread.IsLocked {
+		action = "unlocked"
+	}
+
+	s.WSHub.broadcast <- WSMessage{Type: "thread." + action, Data: echo.Map{"id": tid}}
+	return c.JSON(http.StatusOK, echo.Map{"locked": thread.IsLocked})
+}
+
+func (s *Server) PinThread(c echo.Context) error {
+	id := c.Param("id")
+	tid, err := uuid.Parse(id)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid id"})
+	}
+
+	var thread Thread
+	if err := s.DB.First(&thread, "id = ?", tid).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "thread not found"})
+	}
+
+	thread.IsPinned = !thread.IsPinned
+	if err := s.DB.Save(&thread).Error; err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "pin failed"})
+	}
+
+	action := "pinned"
+	if !thread.IsPinned {
+		action = "unpinned"
+	}
+
+	s.WSHub.broadcast <- WSMessage{Type: "thread." + action, Data: echo.Map{"id": tid}}
+	return c.JSON(http.StatusOK, echo.Map{"pinned": thread.IsPinned})
+}
+
+// User profile endpoints
+func (s *Server) GetUserProfile(c echo.Context) error {
+	username := c.Param("username")
+	var user User
+	if err := s.DB.Where("username = ?", username).First(&user).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "user not found"})
+	}
+
+	// Don't expose sensitive data
+	return c.JSON(http.StatusOK, echo.Map{
+		"id":           user.ID,
+		"username":     user.Username,
+		"displayName":  user.DisplayName,
+		"bio":          user.Bio,
+		"profileImage": user.ProfileImage,
+		"ink":          user.Ink,
+		"createdAt":    user.CreatedAt,
+	})
+}
+
+func (s *Server) GetUserPosts(c echo.Context) error {
+	username := c.Param("username")
+	var user User
+	if err := s.DB.Where("username = ?", username).First(&user).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "user not found"})
+	}
+
+	var posts []Post
+	s.DB.Where("user_id = ?", user.ID).
+		Preload("Board").
+		Order("created_at desc").
+		Limit(50).
+		Find(&posts)
+
+	return c.JSON(http.StatusOK, posts)
+}
+
+func (s *Server) GetUserThreads(c echo.Context) error {
+	username := c.Param("username")
+	var user User
+	if err := s.DB.Where("username = ?", username).First(&user).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "user not found"})
+	}
+
+	var threads []Thread
+	s.DB.Where("user_id = ?", user.ID).
+		Preload("Board").
+		Order("created_at desc").
+		Limit(50).
+		Find(&threads)
+
+	return c.JSON(http.StatusOK, threads)
+}
+
+func (s *Server) GetUserComments(c echo.Context) error {
+	username := c.Param("username")
+	var user User
+	if err := s.DB.Where("username = ?", username).First(&user).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "user not found"})
+	}
+
 	var comments []Comment
-	s.DB.Where("post_id = ?", pid).Order("created_at asc").Find(&comments)
+	s.DB.Where("user_id = ?", user.ID).
+		Order("created_at desc").
+		Limit(50).
+		Find(&comments)
+
 	return c.JSON(http.StatusOK, comments)
 }
 
-// Generic helper to upsert votes for target_type
-func (s *Server) upsertVote(userID uuid.UUID, targetID uuid.UUID, targetType string, val int8) (likes, dislikes int64, err error) {
-	// upsert vote record
-	var v Vote
-	if err := s.DB.Where("user_id = ? AND target_id = ? AND target_type = ?", userID, targetID, targetType).First(&v).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			nv := Vote{
-				UserID:     userID,
-				TargetID:   targetID,
-				TargetType: targetType,
-				Value:      val,
-			}
-			if err := s.DB.Create(&nv).Error; err != nil {
-				return 0, 0, err
-			}
-		} else {
-			return 0, 0, err
-		}
-	} else {
-		// toggle logic: if same value, remove vote (toggle off)
-		if v.Value == val {
-			if err := s.DB.Delete(&v).Error; err != nil {
-				return 0, 0, err
-			}
-		} else {
-			v.Value = val
-			if err := s.DB.Save(&v).Error; err != nil {
-				return 0, 0, err
-			}
-		}
+func (s *Server) UpdateUserProfile(c echo.Context) error {
+	username := c.Param("username")
+	user, err := userFromClaims(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"})
 	}
 
-	// recalc tallies
-	var likesCount int64
-	var dislikesCount int64
-	s.DB.Model(&Vote{}).Where("target_id = ? AND target_type = ? AND value = 1", targetID, targetType).Count(&likesCount)
-	s.DB.Model(&Vote{}).Where("target_id = ? AND target_type = ? AND value = -1", targetID, targetType).Count(&dislikesCount)
-
-	// apply tally to the actual row
-	switch targetType {
-	case "post":
-		s.DB.Model(&Post{}).Where("id = ?", targetID).Updates(map[string]interface{}{"likes": likesCount, "dislikes": dislikesCount})
-	case "comment":
-		s.DB.Model(&Comment{}).Where("id = ?", targetID).Updates(map[string]interface{}{"likes": likesCount, "dislikes": dislikesCount})
-	case "thread":
-		// store likes/dislikes on thread? optional fields not present; if desired add likes/dislikes columns to threads
-	default:
-		// nothing
+	// Check if updating own profile
+	if user.Username != username && user.Role != "admin" && user.Role != "owner" {
+		return c.JSON(http.StatusForbidden, echo.Map{"error": "not authorized"})
 	}
 
-	return likesCount, dislikesCount, nil
-}
-
-func (s *Server) VoteComment(c echo.Context) error {
 	type req struct {
-		Value int8 `json:"value"`
+		DisplayName   string `json:"displayName"`
+		Bio           string `json:"bio"`
+		ProfileImage  string `json:"profileImage"`
+		ProfileBanner string `json:"profileBanner"`
 	}
 	var r req
 	if err := c.Bind(&r); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid"})
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid input"})
 	}
-	if r.Value != 1 && r.Value != -1 {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "value must be 1 or -1"})
+
+	if r.DisplayName != "" {
+		user.DisplayName = r.DisplayName
 	}
-	commentIDStr := c.Param("id")
-	cid, err := uuid.Parse(commentIDStr)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid id"})
+	if r.Bio != "" {
+		user.Bio = r.Bio
 	}
-	user, err := userFromClaims(c)
-	if err != nil {
-		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauth"})
+	if r.ProfileImage != "" {
+		user.ProfileImage = r.ProfileImage
 	}
-	likes, dislikes, err := s.upsertVote(user.ID, cid, "comment", r.Value)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "vote failed"})
+	if r.ProfileBanner != "" {
+		user.ProfileBanner = r.ProfileBanner
 	}
-	return c.JSON(http.StatusOK, echo.Map{"likes": likes, "dislikes": dislikes})
+
+	if err := s.DB.Save(&user).Error; err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "update failed"})
+	}
+
+	return c.JSON(http.StatusOK, user)
 }
 
-func (s *Server) VoteThread(c echo.Context) error {
-	type req struct {
-		Value int8 `json:"value"`
+// Search endpoint
+func (s *Server) Search(c echo.Context) error {
+	q := c.QueryParam("q")
+	if q == "" {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "query required"})
 	}
-	var r req
-	if err := c.Bind(&r); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid"})
+
+	searchType := c.QueryParam("type") // users, posts, threads, boards
+	limit := 20
+
+	results := echo.Map{}
+
+	if searchType == "" || searchType == "boards" {
+		var boards []Board
+		s.DB.Where("name ILIKE ? OR description ILIKE ?", "%"+q+"%", "%"+q+"%").
+			Limit(limit).
+			Find(&boards)
+		results["boards"] = boards
 	}
-	if r.Value != 1 && r.Value != -1 {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "value must be 1 or -1"})
+
+	if searchType == "" || searchType == "posts" {
+		var posts []Post
+		s.DB.Where("title ILIKE ? OR content ILIKE ?", "%"+q+"%", "%"+q+"%").
+			Preload("User").
+			Preload("Board").
+			Limit(limit).
+			Find(&posts)
+		results["posts"] = posts
 	}
-	threadIDStr := c.Param("id")
-	tid, err := uuid.Parse(threadIDStr)
+
+	if searchType == "" || searchType == "users" {
+		var users []User
+		s.DB.Where("username ILIKE ? OR display_name ILIKE ?", "%"+q+"%", "%"+q+"%").
+			Limit(limit).
+			Find(&users)
+
+		// Filter sensitive data
+		safeUsers := make([]echo.Map, len(users))
+		for i, u := range users {
+			safeUsers[i] = echo.Map{
+				"id":          u.ID,
+				"username":    u.Username,
+				"displayName": u.DisplayName,
+				"ink":         u.Ink,
+			}
+		}
+		results["users"] = safeUsers
+	}
+
+	if searchType == "" || searchType == "threads" {
+		var threads []Thread
+		s.DB.Where("title ILIKE ?", "%"+q+"%").
+			Preload("User").
+			Preload("Board").
+			Limit(limit).
+			Find(&threads)
+		results["threads"] = threads
+	}
+
+	return c.JSON(http.StatusOK, results)
+}
+
+// Comment endpoints
+func (s *Server) GetComment(c echo.Context) error {
+	id := c.Param("id")
+	cid, err := uuid.Parse(id)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid id"})
 	}
+
+	var comment Comment
+	if err := s.DB.Preload("User").First(&comment, "id = ?", cid).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "comment not found"})
+	}
+
+	return c.JSON(http.StatusOK, comment)
+}
+
+func (s *Server) DeleteComment(c echo.Context) error {
+	id := c.Param("id")
+	cid, err := uuid.Parse(id)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "invalid id"})
+	}
+
 	user, err := userFromClaims(c)
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauth"})
+		return c.JSON(http.StatusUnauthorized, echo.Map{"error": "unauthorized"})
 	}
-	_, _, err = s.upsertVote(user.ID, tid, "thread", r.Value)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "vote failed"})
+
+	var comment Comment
+	if err := s.DB.First(&comment, "id = ?", cid).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "comment not found"})
 	}
-	return c.JSON(http.StatusOK, echo.Map{"status": "ok"})
+
+	// Check ownership or admin
+	if comment.UserID != user.ID && user.Role != "admin" && user.Role != "moderator" && user.Role != "owner" && user.Role != "coowner" {
+		return c.JSON(http.StatusForbidden, echo.Map{"error": "not authorized"})
+	}
+
+	if err := s.DB.Delete(&comment).Error; err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "delete failed"})
+	}
+
+	s.WSHub.broadcast <- WSMessage{Type: "comment.deleted", Data: echo.Map{"id": cid}}
+	return c.JSON(http.StatusOK, echo.Map{"message": "comment deleted"})
 }

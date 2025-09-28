@@ -36,7 +36,24 @@ export default defineNuxtConfig({
   ],
 
   imports: {
-    dirs: ['stores']
+    dirs: ["app/stores", "app/types"],
+  },
+
+  runtimeConfig: {
+    public: {
+      apiBase:
+        process.env.NUXT_PUBLIC_API_BASE || "http://localhost:8080/api/v1",
+      wsUrl: process.env.NUXT_PUBLIC_WS_URL || "ws://localhost:8080/ws",
+    },
+  },
+
+  nitro: {
+    devProxy: {
+      "/api": {
+        target: "http://localhost:8080/api",
+        changeOrigin: true,
+      },
+    },
   },
 
   // Vite-specific server config (covers vite dev server)
@@ -46,5 +63,11 @@ export default defineNuxtConfig({
 
   typescript: {
     strict: true,
+  },
+
+  colormode: {
+    preference: "system",
+    fallback: "light",
+    storageKey: "blueberry-color-mode",
   },
 });
